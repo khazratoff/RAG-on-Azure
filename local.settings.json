@@ -1,0 +1,8 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "FUNCTIONS_WORKER_RUNTIME": "python",
+    "AzureWebJobsStorage": "DefaultEndpointsProtocol=https;EndpointSuffix=core.windows.net;AccountName=ikstorage6177;AccountKey=iLjmK+ME2xQcsbHzEOkAUOWXPr0gMkNcIxPmzx7CMbyhxwmo+LVUQfBtr/kVZLQwTDt9E+NE03ya+AStKiMvxA==;BlobEndpoint=https://ikstorage6177.blob.core.windows.net/;FileEndpoint=https://ikstorage6177.file.core.windows.net/;QueueEndpoint=https://ikstorage6177.queue.core.windows.net/;TableEndpoint=https://ikstorage6177.table.core.windows.net/"
+  },
+  "ConnectionStrings": {}
+}

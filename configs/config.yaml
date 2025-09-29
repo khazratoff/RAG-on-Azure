@@ -1,0 +1,19 @@
+azure:
+  openai_key: "ae191889b3cd4b47a1541bf231426a83"
+  account_url: "https://ikstorage6177.blob.core.windows.net"
+  storage:
+    container:
+      raw: "raw-docs"
+      vector: "vector-indexes"
+
+
+
+
+
+vectorstore:
+  path: "./data/faiss_index"
+
+embedding:
+  model: "text-embedding-ada-002"
+
+
