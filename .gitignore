@@ -3,3 +3,5 @@ data/
 
 __pycache__
 run_check.py
+
+configs/
