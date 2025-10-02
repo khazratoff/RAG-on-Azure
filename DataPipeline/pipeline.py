@@ -8,7 +8,8 @@ from langchain_openai import  AzureOpenAIEmbeddings
 from langchain_community.vectorstores import FAISS
 from langchain_community.docstore.in_memory import InMemoryDocstore
 import faiss
-from azure.core.exceptions import ResourceExistsError
+from azure.core.exceptions import ResourceExistsError, ResourceNotFoundError
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 
 class RagDataPipeline():
@@ -26,6 +27,12 @@ class RagDataPipeline():
             azure_deployment=config.azure.deployment,
             api_version="2023-05-15"
         )
+        self.text_splitter = RecursiveCharacterTextSplitter(
+                    chunk_size=1000,      
+                    chunk_overlap=200,   
+                    length_function=len, 
+                    separators=["\n\n", "\n", " ", ""]
+                )
 
     def compute_hash(self,content: bytes) -> str:
         return hashlib.sha256(content).hexdigest()
@@ -55,11 +62,6 @@ class RagDataPipeline():
                 f.write(blob_client.download_blob().readall())
 
 
-    def extract_text(self):
-
-        pass
-
-
     def load_hashes(self,index_container) -> set:
         """Download hashes.json from blob (if exists)."""
         try:
@@ -78,11 +80,11 @@ class RagDataPipeline():
 
 
     def scan(self):
-        """Scan raw-data container and return only new (deduped) docs."""
+        """Scan raw-data container and return only new (deduped) docs (chunked)."""
         raw_container = self.blob_service.get_container_client(self.config.azure.storage.container.raw)
         index_container = self.blob_service.get_container_client(self.config.azure.storage.container.vector)
         known_hashes = self.load_hashes(index_container)
-        new_docs, new_hashes = [], set()
+        new_docs, new_metadatas, new_hashes = [], [], set()
 
         for blob in raw_container.list_blobs():
             blob_client = raw_container.get_blob_client(blob)
@@ -90,26 +92,41 @@ class RagDataPipeline():
             file_hash = self.compute_hash(content)
 
             if file_hash not in known_hashes:
-                # Store plain text here (adjust if PDF, etc.)
                 print(f"ℹ️ New file found: {blob.name}")
-                new_docs.append(content.decode("utf-8"))
+                text = content.decode("utf-8")
+
+                chunks = self.text_splitter.split_text(text)
+
+                for i, chunk in enumerate(chunks):
+                    new_docs.append(chunk)
+                    new_metadatas.append({
+                        "source_file": blob.name,
+                        "chunk_index": i,
+                        "hash": file_hash
+                    })
+
                 new_hashes.add(file_hash)
 
-        return new_docs, new_hashes
+        return new_docs, new_metadatas, new_hashes
+
 
 
     def update_vectorstore(self):
 
-        index_container = self.blob_service.get_container_client(self.config.azure.storage.container.vector)
-        new_docs, new_hashes = self.scan()
+        try:
+            index_container = self.blob_service.get_container_client(self.config.azure.storage.container.vector)
+            index_container.get_container_properties()
+        except ResourceNotFoundError:
+            print("ℹ️ No existing FAISS index container, creating one...")
+            self.blob_service.create_container(self.config.azure.storage.container.vector)
+            index_container = self.blob_service.get_container_client(self.config.azure.storage.container.vector)
+
+        new_docs, new_metadatas, new_hashes = self.scan()
 
         if not new_docs:
             print("ℹ️ No new docs to embed — skipping FAISS update")
             return
 
-
-
-        # Load or create FAISS
         local_vectorstore = self.config.vectorstore.path
         if any(b.name == "index.faiss" for b in index_container.list_blobs()):
             print("ℹ️ Loading existing FAISS index")
@@ -125,18 +142,19 @@ class RagDataPipeline():
                 docstore=InMemoryDocstore(),
                 index_to_docstore_id={}
             )
-        # Add new docs
-        vectorstore.add_texts(new_docs)
+
+        vectorstore.add_texts(new_docs, metadatas=new_metadatas)
 
         # Save updated FAISS
         vectorstore.save_local(local_vectorstore)
-        self.upload_directory(local_vectorstore,self.config.azure.storage.container.vector)
+        self.upload_directory(local_vectorstore, self.config.azure.storage.container.vector)
 
         # Save updated hashes
         hashes = self.load_hashes(index_container)
         hashes.update(new_hashes)
         self.save_hashes(hashes)
 
-        print(f"✅ Embedded {len(new_docs)} new docs and updated FAISS index")
+        print(f"✅ Embedded {len(new_docs)} new chunks and updated FAISS index")
+
 
 
