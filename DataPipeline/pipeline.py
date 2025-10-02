@@ -6,7 +6,9 @@ from azure.storage.blob import BlobServiceClient
 from azure.identity import DefaultAzureCredential
 from langchain_openai import  AzureOpenAIEmbeddings
 from langchain_community.vectorstores import FAISS
-
+from langchain_community.docstore.in_memory import InMemoryDocstore
+import faiss
+from azure.core.exceptions import ResourceExistsError
 
 
 class RagDataPipeline():
@@ -16,10 +18,14 @@ class RagDataPipeline():
         self.config = config
         self.account_url = config.azure.account_url
         self.default_credential = DefaultAzureCredential()
-        self.embeddings = AzureOpenAIEmbeddings(model=config.embedding.model,api_key=config.azure.openai_key,azure_endpoint="https://ai-proxy.lab.epam.com")
         self.HASH_FILE = "hashes.json"
         self.blob_service = BlobServiceClient(account_url=self.account_url, credential=self.default_credential)
-
+        self.embeddings = AzureOpenAIEmbeddings(
+            api_key=config.azure.api_key,
+            azure_endpoint=config.azure.endpoint,
+            azure_deployment=config.azure.deployment,
+            api_version="2023-05-15"
+        )
 
     def compute_hash(self,content: bytes) -> str:
         return hashlib.sha256(content).hexdigest()
@@ -28,7 +34,10 @@ class RagDataPipeline():
     def upload_directory(self,local_dir: str, container_name: str):
         """Upload all files in a directory to a blob container."""
         container_client = self.blob_service.get_container_client(container_name)
-        container_client.create_container(exist_ok=True)
+        try:
+            container_client.create_container()
+        except ResourceExistsError:
+            pass
         for fname in os.listdir(local_dir):
             fpath = os.path.join(local_dir, fname)
             blob_client = container_client.get_blob_client(fname)
@@ -82,6 +91,7 @@ class RagDataPipeline():
 
             if file_hash not in known_hashes:
                 # Store plain text here (adjust if PDF, etc.)
+                print(f"ℹ️ New file found: {blob.name}")
                 new_docs.append(content.decode("utf-8"))
                 new_hashes.add(file_hash)
 
@@ -102,11 +112,19 @@ class RagDataPipeline():
         # Load or create FAISS
         local_vectorstore = self.config.vectorstore.path
         if any(b.name == "index.faiss" for b in index_container.list_blobs()):
+            print("ℹ️ Loading existing FAISS index")
             self.download_directory(self.config.azure.storage.container.vector, local_vectorstore)
             vectorstore = FAISS.load_local(local_vectorstore, self.embeddings, allow_dangerous_deserialization=True)
         else:
-            vectorstore = FAISS(embedding_function=self.embeddings, index=None, docstore=None, index_to_docstore_id={})
-
+            print("ℹ️ Creating new FAISS index")
+            dimension = len(self.embeddings.embed_query("hello"))
+            index = faiss.IndexFlatL2(dimension)
+            vectorstore = FAISS(
+                embedding_function=self.embeddings,
+                index=index,
+                docstore=InMemoryDocstore(),
+                index_to_docstore_id={}
+            )
         # Add new docs
         vectorstore.add_texts(new_docs)
 

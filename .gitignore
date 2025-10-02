@@ -5,3 +5,7 @@ __pycache__
 run_check.py
 
 configs/
+.DS_Store
+
+models.json
+local.settings.json
