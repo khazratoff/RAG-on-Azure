@@ -1,8 +1,11 @@
 # Base image
-FROM python:3.10-slim
+FROM python:3.11-slim
 
 # Set working directory
 WORKDIR /app
+
+# Create non-root user
+RUN groupadd -r appuser && useradd -r -g appuser appuser
 
 # Install system dependencies (useful for FAISS, numpy, etc.)
 RUN apt-get update && apt-get install -y \
@@ -17,6 +20,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the app
 COPY backend /app/
 COPY configs /app/
+
+# Change ownership to non-root user
+RUN chown -R appuser:appuser /app
+USER appuser
 
 # Expose port
 EXPOSE 8000
