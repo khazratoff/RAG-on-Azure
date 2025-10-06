@@ -24,7 +24,7 @@ class RagDataPipeline():
         self.embeddings = AzureOpenAIEmbeddings(
             api_key=config.azure.api_key,
             azure_endpoint=config.azure.endpoint,
-            azure_deployment=config.azure.deployment,
+            azure_deployment=config.azure.deployment.embedding,
             api_version="2023-05-15"
         )
         self.text_splitter = RecursiveCharacterTextSplitter(
