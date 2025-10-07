@@ -16,7 +16,6 @@ from azure.search.documents.indexes.models import (
     SimpleField,
     SearchableField,
     VectorSearch,
-    VectorSearchAlgorithmConfiguration,
     SearchFieldDataType,
     SearchField,
     VectorSearchProfile,
@@ -44,39 +43,10 @@ def retry_loop(fn, attempts=3, delay=2, backoff=2, exceptions=(Exception,), fn_n
     raise last_exc
 
 
-class AzureSearchRagPipeline:
+class AzureSearchDataPipeline:
     def __init__(self, cfg: dict):
-        """
-        cfg is a dict or simple object with keys used below. Example structure:
-        {
-          "azure": {
-            "blob_account_url": "https://<account>.blob.core.windows.net",
-            "raw_container": "raw-data",
-            "vector_container": "vector-index-container"
-          },
-          "search": {
-            "endpoint": "https://<your-search>.search.windows.net",
-            "index_name": "documents-vector-index",
-            "api_key": "<optional search api key>"
-          },
-          "openai": {
-            "endpoint": "https://ai-proxy.lab.epam.com",
-            "api_key": "<your dial or azure key>",
-            "deployment": "text-embedding-3-small-1",
-            "api_version": "2023-05-15"
-          },
-          "chunker": {
-            "chunk_size": 1000,
-            "chunk_overlap": 200
-          },
-          "batch": {
-            "embed_batch_size": 32,
-            "upsert_batch_size": 100
-          }
-        }
-        """
+
         self.cfg = cfg
-        # Blob client (use DefaultAzureCredential to support managed identity; fallback to connection string if present)
         if os.getenv("AZURE_STORAGE_CONNECTION_STRING"):
             self.blob_service = BlobServiceClient.from_connection_string(os.getenv("AZURE_STORAGE_CONNECTION_STRING"))
         else:
@@ -86,19 +56,16 @@ class AzureSearchRagPipeline:
         self.raw_container_name = cfg["azure"]["raw_container"]
         self.vector_container_name = cfg["azure"]["vector_container"]
 
-        # Search client: prefer API key if provided in cfg; else use DefaultAzureCredential (managed identity)
         self.index_name = cfg["search"]["index_name"]
         if cfg.get("search", {}).get("api_key"):
             self.search_client = SearchClient(endpoint=cfg["search"]["endpoint"],
                                               index_name=cfg["search"]["index_name"],
                                               credential=AzureKeyCredential(cfg["search"]["api_key"]))
         else:
-            # requires MSI on the host
             self.search_client = SearchClient(endpoint=cfg["search"]["endpoint"],
                                               index_name=cfg["search"]["index_name"],
                                               credential=DefaultAzureCredential())
 
-        # Embeddings client (LangChain Azure wrapper)
         openai_cfg = cfg["openai"]
         self.embeddings = AzureOpenAIEmbeddings(
             api_key=openai_cfg["api_key"],
@@ -109,7 +76,6 @@ class AzureSearchRagPipeline:
         self.vector_dimensions = len(self.embeddings.embed_query("hello world"))
 
 
-        # Chunker
         chunk_cfg = cfg.get("chunker", {})
         self.splitter = RecursiveCharacterTextSplitter(
             chunk_size=int(chunk_cfg.get("chunk_size", 1000)),
@@ -125,7 +91,6 @@ class AzureSearchRagPipeline:
         self.hash_blob_name = "hashes.json"
         logging.info("AzureSearchRagPipeline initialized")
 
-    # ---------- Hash helpers ----------
     def compute_hash(self, data: bytes) -> str:
         return hashlib.sha256(data).hexdigest()
 
@@ -151,12 +116,11 @@ class AzureSearchRagPipeline:
         blob = container.get_blob_client(self.hash_blob_name)
         blob.upload_blob(json.dumps(list(hashes)), overwrite=True)
 
-    # ---------- Scanning / chunking ----------
     def scan_for_new_chunks(self) -> Tuple[List[str], List[Dict], set]:
         """
         Scan raw container, return (chunks, metadatas, new_hashes)
         - chunks: list of chunk text strings
-        - metadatas: list of dicts aligned with chunks (source_file, chunk_index, hash)
+        - metadatas: list of dicts aligned with chunks (metadata, chunk_index, hash)
         - new_hashes: set of file-level hashes to be appended to stored hashes after successful upsert
         """
         raw = self.blob_service.get_container_client(self.raw_container_name)
@@ -179,7 +143,6 @@ class AzureSearchRagPipeline:
                 logging.debug(f"Skipping already-processed blob {blob_props.name}")
                 continue
 
-            # assume txt files for now; you can add PDF/Docx extraction here
             try:
                 text = data.decode("utf-8")
             except UnicodeDecodeError:
@@ -190,7 +153,7 @@ class AzureSearchRagPipeline:
             for i, chunk in enumerate(file_chunks):
                 chunks.append(chunk)
                 metadatas.append({
-                    "source_file": blob_props.name,
+                    "metadata": blob_props.name,
                     "chunk_index": i,
                     "hash": file_hash
                 })
@@ -199,7 +162,6 @@ class AzureSearchRagPipeline:
 
         return chunks, metadatas, new_hashes
 
-    # ---------- Embedding + upsert ----------
     def embed_batches(self, texts: List[str]) -> List[List[float]]:
         """Embed in batches using embeddings.embed_documents (returns list of vectors)."""
         vectors: List[List[float]] = []
@@ -211,7 +173,7 @@ class AzureSearchRagPipeline:
                 return self.embeddings.embed_documents(batch)
             vecs = retry_loop(call_embed, attempts=4, delay=1, backoff=2, exceptions=(Exception,), fn_name="embed_documents")
             vectors.extend(vecs)
-            time.sleep(0.05)  # gentle pause
+            time.sleep(0.05) 
         return vectors
 
     def build_documents_for_search(self, chunks: List[str], metas: List[Dict], vectors: List[List[float]]) -> List[Dict]:
@@ -221,10 +183,10 @@ class AzureSearchRagPipeline:
             docs.append({
                 "id": doc_id,
                 "content": chunk,
-                "source_file": meta["source_file"],
+                "metadata": meta["metadata"],
                 "chunk_index": meta["chunk_index"],
                 "hash": meta["hash"],
-                "contentVector": vec
+                "content_vector": vec
             })
         return docs
 
@@ -254,7 +216,12 @@ class AzureSearchRagPipeline:
                 self._create_index_if_missing()
                 logging.info("Retrying upload after index creation...")
                 time.sleep(2)  # small delay before retry
-                results = self.search_client.upload_documents(documents=batch)
+                try:
+                    results = self.search_client.upload_documents(documents=batch)
+                except Exception as e:
+                    name = self.search_client._index_name
+                    logging.error(f"❌ Failed to upload documents after index creation: {e}",name)
+                    raise e
 
 
 
@@ -305,13 +272,13 @@ class AzureSearchRagPipeline:
             )
             # Define the index schema
             fields = [
-                SimpleField(name="id", type=SearchFieldDataType.String, key=True),
-                SearchableField(name="content", type=SearchFieldDataType.String, searchable=True),
-                SimpleField(name="source_file", type=SearchFieldDataType.String, filterable=True, facetable=True),
+                SimpleField(name="id", type=SearchFieldDataType.String, key=True,filterable=True),
+                SearchableField(name="content", type=SearchFieldDataType.String, searchable=True,),
+                SimpleField(name="metadata", type=SearchFieldDataType.String, filterable=True, facetable=True),
                 SimpleField(name="chunk_index", type=SearchFieldDataType.Int32, filterable=True, sortable=True),
                 SimpleField(name="hash", type=SearchFieldDataType.String, filterable=True),
                 SearchField(
-                    name="contentVector",
+                    name="content_vector",
                     type=SearchFieldDataType.Collection(SearchFieldDataType.Single),
                     searchable=True,
                     vector_search_dimensions=self.vector_dimensions,  # set dynamically from embeddings
@@ -372,32 +339,42 @@ class AzureSearchRagPipeline:
 
     # ---------- Query helper ----------
     def query_vector_search(self, query_text: str, k: int = 5) -> Dict:
-        """Return raw search response for a vector query (embeds query then calls REST via search_client.search)."""
+        """Perform a vector search query using Azure AI Search (2024 API)."""
         q_emb = self.embeddings.embed_query(query_text)
+        if not isinstance(q_emb, list):
+            q_emb = q_emb.tolist()  # ensure it's JSON serializable
+
+        endpoint = self.cfg["search"]["endpoint"].rstrip("/")
+        index = self.cfg["search"]["index_name"]
+        api_key = self.cfg["search"]["api_key"]
+
+        url = f"{endpoint}/indexes/{index}/docs/search?api-version=2024-07-01"
 
         body = {
-            "vector": {
-                "value": q_emb,
-                "fields": "contentVector",
-                "k": k
-            },
-            "select": ["id", "content", "source_file", "chunk_index"]
+            "vectorQueries": [
+                {
+                    "kind": "vector",
+                    "vector": q_emb,
+                    "fields": "contentVector",  # must match your index
+                    "k": k
+                }
+            ],
+            "select": ["id", "content", "metadata", "chunk_index"]
         }
-        # Use REST endpoint because SDK versions vary. Construct URL from endpoint & index.
-        endpoint = self.cfg["search"]["endpoint"]
-        index = self.cfg["search"]["index_name"]
-        api_key = self.cfg["search"].get("api_key")
-        url = f"{endpoint}/indexes/{index}/docs/search?api-version=2023-07-01-preview"
-        headers = {"Content-Type": "application/json"}
-        if api_key:
-            headers["api-key"] = api_key
-        else:
-            # SDK-managed identity path would be used in production; fallback to SDK search_client.search if no key.
-            return self.search_client.search(search_text=None, vector={"value": q_emb, "fields": "contentVector", "k": k})
+
+        headers = {
+            "Content-Type": "application/json",
+            "api-key": api_key
+        }
 
         resp = requests.post(url, headers=headers, data=json.dumps(body))
+        if not resp.ok:
+            print("❌ Response:", resp.status_code, resp.text)
         resp.raise_for_status()
+
         return resp.json()
+
+
 
 
 

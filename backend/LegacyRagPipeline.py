@@ -6,7 +6,7 @@ from langchain.prompts import PromptTemplate
 from azure.storage.blob import BlobServiceClient
 from azure.identity import DefaultAzureCredential
 
-class RagPipeline:
+class AzureRagPipeline:
     def __init__(self, config):
         self.config = config
         self.vectorstore_path = config.vectorstore.path
