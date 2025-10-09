@@ -27,7 +27,7 @@ from azure.search.documents.indexes.models import (
 from azure.search.documents.indexes import SearchIndexClient
 
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain_openai import AzureOpenAIEmbeddings
+from langchain_openai.embeddings import OpenAIEmbeddings
 
 # Basic retry helper
 def retry_loop(fn, attempts=3, delay=2, backoff=2, exceptions=(Exception,), fn_name="operation"):
@@ -46,9 +46,12 @@ def retry_loop(fn, attempts=3, delay=2, backoff=2, exceptions=(Exception,), fn_n
 class AzureSearchDataPipeline:
     def __init__(self, cfg: dict):
 
+#Config-----------
         self.cfg = cfg
+
+#Blob storage-------------
         if os.getenv("AZURE_STORAGE_CONNECTION_STRING"):
-            self.blob_service = BlobServiceClient.from_connection_string(os.getenv("AZURE_STORAGE_CONNECTION_STRING"))
+            self.blob_service = BlobServiceClient.from_connection_string(cfg["azure"]["connection_string"])
         else:
             self.blob_service = BlobServiceClient(account_url=cfg["azure"]["blob_account_url"],
                                                   credential=DefaultAzureCredential())
@@ -56,6 +59,7 @@ class AzureSearchDataPipeline:
         self.raw_container_name = cfg["azure"]["raw_container"]
         self.vector_container_name = cfg["azure"]["vector_container"]
 
+#Vectorstore---------------
         self.index_name = cfg["search"]["index_name"]
         if cfg.get("search", {}).get("api_key"):
             self.search_client = SearchClient(endpoint=cfg["search"]["endpoint"],
@@ -65,17 +69,22 @@ class AzureSearchDataPipeline:
             self.search_client = SearchClient(endpoint=cfg["search"]["endpoint"],
                                               index_name=cfg["search"]["index_name"],
                                               credential=DefaultAzureCredential())
-
+#Embeddings-----------------
         openai_cfg = cfg["openai"]
-        self.embeddings = AzureOpenAIEmbeddings(
+        #---not for prod----
+        # self.embeddings = AzureOpenAIEmbeddings(
+        #     api_key=openai_cfg["api_key"],
+        #     azure_endpoint=openai_cfg["endpoint"],
+        #     azure_deployment=openai_cfg["deployment"],
+        #     api_version=openai_cfg.get("api_version", "2023-05-15")
+        # )
+        self.embeddings = OpenAIEmbeddings(
             api_key=openai_cfg["api_key"],
-            azure_endpoint=openai_cfg["endpoint"],
-            azure_deployment=openai_cfg["deployment"],
-            api_version=openai_cfg.get("api_version", "2023-05-15")
+            model=openai_cfg["embedding_model"],
         )
         self.vector_dimensions = len(self.embeddings.embed_query("hello world"))
 
-
+#Chunking config-------------
         chunk_cfg = cfg.get("chunker", {})
         self.splitter = RecursiveCharacterTextSplitter(
             chunk_size=int(chunk_cfg.get("chunk_size", 1000)),
@@ -302,6 +311,7 @@ class AzureSearchDataPipeline:
             # Wait for index to become available
             for i in range(10):
                 try:
+                    time.sleep(10)
                     index_client.get_index(self.index_name)
                     logging.info(f"✅ Index '{self.index_name}' is now active.")
                     return
@@ -337,42 +347,7 @@ class AzureSearchDataPipeline:
         self.save_hashes(all_hashes)
         logging.info(f"Run complete. Indexed {len(docs)} chunks from {len(new_hashes)} new files.")
 
-    # ---------- Query helper ----------
-    def query_vector_search(self, query_text: str, k: int = 5) -> Dict:
-        """Perform a vector search query using Azure AI Search (2024 API)."""
-        q_emb = self.embeddings.embed_query(query_text)
-        if not isinstance(q_emb, list):
-            q_emb = q_emb.tolist()  # ensure it's JSON serializable
 
-        endpoint = self.cfg["search"]["endpoint"].rstrip("/")
-        index = self.cfg["search"]["index_name"]
-        api_key = self.cfg["search"]["api_key"]
-
-        url = f"{endpoint}/indexes/{index}/docs/search?api-version=2024-07-01"
-
-        body = {
-            "vectorQueries": [
-                {
-                    "kind": "vector",
-                    "vector": q_emb,
-                    "fields": "contentVector",  # must match your index
-                    "k": k
-                }
-            ],
-            "select": ["id", "content", "metadata", "chunk_index"]
-        }
-
-        headers = {
-            "Content-Type": "application/json",
-            "api-key": api_key
-        }
-
-        resp = requests.post(url, headers=headers, data=json.dumps(body))
-        if not resp.ok:
-            print("❌ Response:", resp.status_code, resp.text)
-        resp.raise_for_status()
-
-        return resp.json()
 
 
 

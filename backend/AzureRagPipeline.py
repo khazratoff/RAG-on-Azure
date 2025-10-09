@@ -6,7 +6,8 @@ from azure.identity import DefaultAzureCredential
 from azure.search.documents import SearchClient
 from azure.core.credentials import AzureKeyCredential
 from azure.storage.blob import BlobServiceClient
-from langchain_openai import AzureOpenAIEmbeddings, AzureChatOpenAI
+from langchain_openai.embeddings import OpenAIEmbeddings
+from langchain_openai import ChatOpenAI
 from langchain.prompts import PromptTemplate
 from configs.config import rag_cfg
 
@@ -21,19 +22,28 @@ class AzureSearchRagPipeline:
             account_url=self.cfg["azure"]["blob_account_url"],
             credential=self.default_credential
         )
-
-        self.embeddings = AzureOpenAIEmbeddings(
+# NOT for Prod--------------------------
+        # self.embeddings = AzureOpenAIEmbeddings(
+        #     api_key=self.cfg["openai"]["api_key"],
+        #     azure_endpoint=self.cfg["openai"]["endpoint"],
+        #     azure_deployment=self.cfg["openai"]["deployment"],
+        #     api_version=self.cfg["openai"]["api_version"]
+        # )
+        self.embeddings = OpenAIEmbeddings(
             api_key=self.cfg["openai"]["api_key"],
-            azure_endpoint=self.cfg["openai"]["endpoint"],
-            azure_deployment=self.cfg["openai"]["deployment"],
-            api_version=self.cfg["openai"]["api_version"]
+            model=self.cfg['openai']['embedding_model'],
         )
-
-        self.llm = AzureChatOpenAI(
+        
+# NOT for Prod
+        # self.llm = AzureChatOpenAI(
+        #     api_key=self.cfg["openai"]["api_key"],
+        #     azure_endpoint=self.cfg["openai"]["endpoint"],
+        #     model=self.cfg["openai"]["chat_model"],
+        #     api_version=self.cfg["openai"]["api_version"]
+        # )
+        self.llm = ChatOpenAI(
             api_key=self.cfg["openai"]["api_key"],
-            azure_endpoint=self.cfg["openai"]["endpoint"],
-            model=self.cfg["openai"]["chat_model"],
-            api_version=self.cfg["openai"]["api_version"]
+            model=self.cfg['openai']['chat_model'],
         )
 
         self.search_client = SearchClient(
