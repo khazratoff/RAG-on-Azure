@@ -177,7 +177,7 @@ class AzureSearchDataPipeline:
         for i in range(0, len(texts), self.embed_batch_size):
             batch = texts[i:i + self.embed_batch_size]
             logging.info(f"Embedding batch {i//self.embed_batch_size + 1}: {len(batch)} items")
-            # use retry wrapper to handle transient issues
+            
             def call_embed():
                 return self.embeddings.embed_documents(batch)
             vecs = retry_loop(call_embed, attempts=4, delay=1, backoff=2, exceptions=(Exception,), fn_name="embed_documents")

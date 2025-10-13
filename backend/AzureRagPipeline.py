@@ -2,26 +2,25 @@ import os
 import json
 from typing import List, Dict
 
-from azure.identity import DefaultAzureCredential
 from azure.search.documents import SearchClient
 from azure.core.credentials import AzureKeyCredential
 from azure.storage.blob import BlobServiceClient
 from langchain_openai.embeddings import OpenAIEmbeddings
 from langchain_openai import ChatOpenAI
 from langchain.prompts import PromptTemplate
-from configs.config import rag_cfg
 
 
 class AzureSearchRagPipeline:
     def __init__(self, cfg: Dict):
         self.cfg = cfg
+# NOT for Prod---------------------
+        # self.default_credential = DefaultAzureCredential()
 
-        self.default_credential = DefaultAzureCredential()
-
-        self.blob_service = BlobServiceClient(
-            account_url=self.cfg["azure"]["blob_account_url"],
-            credential=self.default_credential
-        )
+        # self.blob_service = BlobServiceClient(
+        #     account_url=self.cfg["azure"]["blob_account_url"],
+        #     credential=self.default_credential
+        # )
+        self.blob_service = BlobServiceClient.from_connection_string(cfg["azure"]["connection_string"])
 # NOT for Prod--------------------------
         # self.embeddings = AzureOpenAIEmbeddings(
         #     api_key=self.cfg["openai"]["api_key"],
@@ -42,6 +41,7 @@ class AzureSearchRagPipeline:
         #     api_version=self.cfg["openai"]["api_version"]
         # )
         self.llm = ChatOpenAI(
+            streaming=True,
             api_key=self.cfg["openai"]["api_key"],
             model=self.cfg['openai']['chat_model'],
         )
@@ -109,10 +109,11 @@ class AzureSearchRagPipeline:
         return reformulated.content.strip()
 
 
-    def generate_answer(self, refined_query: str, retrieved_docs: List[Dict]) -> str:
+    def generate_answer(self, refined_query: str, retrieved_docs: List[Dict]):
         """
         Generate a final answer using the LLM and retrieved context.
         """
+        
         context=''
         for d in retrieved_docs:
             context += f"- {d['content']}\n"
@@ -132,8 +133,10 @@ class AzureSearchRagPipeline:
         Final Answer:
         """
         prompt = PromptTemplate(template=template, input_variables=["query", "context"])
-        response = self.llm.invoke(prompt.format(query=refined_query, context=context))
-        return response.content.strip()
+        # response = self.llm.invoke(prompt.format(query=refined_query, context=context))
+        for token in self.llm.stream(prompt.format(query=refined_query, context=context)):
+            yield token.content
+        # return response.content.strip()
 
 
     def run(self, user_input: str) -> str:
@@ -147,17 +150,6 @@ class AzureSearchRagPipeline:
         refined_query = self.refine_query(user_input, docs)
 
         # Step 3: Generate final answer
-        answer = self.generate_answer(refined_query, docs)
-        return answer
-
-
-
-def main():
-    
-    rag_pipeline = AzureSearchRagPipeline(cfg=rag_cfg)
-    
-    user_query = "What is the most strict company rules?"
-    answer = rag_pipeline.run(user_query)
-    print(f"Answer: {answer}")
-if __name__ == "__main__":
-    main()
+        # answer = self.generate_answer(refined_query, docs)
+        # return answer
+        return self.generate_answer(refined_query, docs)
