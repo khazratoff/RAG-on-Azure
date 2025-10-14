@@ -10,6 +10,5 @@ configs/
 models.json
 local.settings.json
 
-*.txt
 
 .env
