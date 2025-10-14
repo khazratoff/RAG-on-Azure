@@ -1,0 +1,45 @@
+name: Deploy Data Pipeline
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'DataPipeline/**'
+  workflow_dispatch:
+
+env:
+  REGISTRY: ${{ secrets.REGISTRY_LOGIN_SERVER }}
+  RESOURCE_GROUP: ${{ secrets.RESOURCE_GROUP }}
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./DataPipeline
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Log in to Azure
+      uses: azure/login@v2
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+    - name: Log in to ACR
+      run: az acr login --name ${{ env.REGISTRY }}
+
+    - name: Build and push Docker image
+      run: |
+        IMAGE_TAG=$(date +%Y%m%d%H%M)
+        docker buildx build --platform linux/amd64 -t ${{ env.REGISTRY }}/az-rag-data-pipeline:${IMAGE_TAG} .
+        docker push ${{ env.REGISTRY }}/az-rag-data-pipeline:${IMAGE_TAG}
+        echo "IMAGE_TAG=${IMAGE_TAG}" >> $GITHUB_ENV
+
+    - name: Deploy to Azure Container App Job
+      run: |
+        az containerapp job update \
+          --name ${{ secrets.DATA_PIPELINE_APP_NAME }} \
+          --resource-group ${{ env.RESOURCE_GROUP }} \
+          --image ${{ env.REGISTRY }}/az-rag-data-pipeline:${{ env.IMAGE_TAG }}
