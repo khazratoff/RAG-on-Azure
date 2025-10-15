@@ -28,14 +28,16 @@ jobs:
         creds: ${{ secrets.AZURE_CREDENTIALS }}
 
     - name: Delete existing 'index.html'
-      run: az storage blob delete \
+      run: |
+        az storage blob delete \
             --account-name ${{ secrets.BLOB_ACCOUNT_URL }} \
             --container-name '$web' \
             --name 'index.html' \
             --auth-mode login
 
     - name: Upload modified 'index.html'
-      run: az storage blob upload \
+      run: |
+        az storage blob upload \
             --account-name ${{ secrets.BLOB_ACCOUNT_URL }} \
             --container-name '$web' \
             --name 'index.html' \
