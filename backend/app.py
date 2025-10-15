@@ -69,7 +69,7 @@ rag = AzureSearchRagPipeline(cfg=rag_cfg)
 
 @app.get("/")
 def root():
-    return {"message": "Welcome, ask any question about company policies!"}
+    return {"message": "Welcome, this is Employee Assistant!"}
 
 
 # @app.post("/chat")
