@@ -33,8 +33,7 @@ jobs:
             --account-name ${{ secrets.BLOB_ACCOUNT_URL }} \
             --container-name '$web' \
             --name 'index.html' \
-            --auth-mode login
-
+            --account-key ${{ secrets.BLOB_ACCOUNT_KEY }}
     - name: Upload modified 'index.html'
       run: |
         az storage blob upload \
@@ -42,4 +41,4 @@ jobs:
             --container-name '$web' \
             --name 'index.html' \
             --file index.html \
-            --auth-mode login
+            --account-key ${{ secrets.BLOB_ACCOUNT_KEY }}
