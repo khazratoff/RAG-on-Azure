@@ -1,4 +1,2 @@
 # RAG-on-Azure
-Projects: RAG system on Azure
-
 Developed an end-to-end RAG application combining Azure Cognitive Search, Azure OpenAI, and a FastAPI backend to deliver intelligent, context-aware answers from private data sources. Implemented vector-based semantic search for document retrieval and integrated LLM reasoning for response generation. Designed a streaming API for real-time token-level responses and deployed a lightweight web frontend for interactive querying. Built a CI/CD pipeline with GitHub Actions for automatic deployment to Azure App Service and Static Web Apps, ensuring seamless cloud scalability. Demonstrated expertise in Azure AI services, Python (FastAPI), LLM integration, vector search, and DevOps automation.
