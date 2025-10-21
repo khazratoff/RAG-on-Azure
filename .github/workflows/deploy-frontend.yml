@@ -42,3 +42,5 @@ jobs:
             --name 'index.html' \
             --file index.html \
             --account-key ${{ secrets.BLOB_ACCOUNT_KEY }}
+
+            

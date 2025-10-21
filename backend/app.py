@@ -54,7 +54,8 @@ rag_cfg = {
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[rag_cfg["fastapi"]["allowed_origin"]],  
+    allow_origins=[rag_cfg["fastapi"]["allowed_origin"]], 
+    # allow_origins=["*"], for local testing
     allow_credentials=True,
     allow_methods=["*"],  
     allow_headers=["*"],  
@@ -71,23 +72,6 @@ rag = AzureSearchRagPipeline(cfg=rag_cfg)
 def root():
     return {"message": "Welcome, this is Employee Assistant!"}
 
-
-# @app.post("/chat")
-# async def ask_question(query: QueryRequest,_: None = Depends(verify_api_key)):
-#     async def generate():
-#         for word in rag.run(user_input=query.query):
-#             yield word
-#             await asyncio.sleep(0.1)
-#     return StreamingResponse(generate(), media_type="text/plain")
-
-
-# @app.get("/stream")
-# async def stream(question: str):
-#     async def event_generator():
-#         for chunk in rag.run(question):  # sync generator OK
-#             yield chunk
-#             await asyncio.sleep(0.1)
-#     return EventSourceResponse(event_generator())
 
 
 @app.get("/stream")
