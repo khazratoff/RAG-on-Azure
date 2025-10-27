@@ -10,5 +10,5 @@ configs/
 models.json
 local.settings.json
 
-
+set_envs.sh
 .env

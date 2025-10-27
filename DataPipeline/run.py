@@ -2,9 +2,35 @@ import logging
 import os
 from AzureDataPipeline import AzureSearchDataPipeline
 from dotenv import load_dotenv
-logging.basicConfig(level=logging.INFO)
 
+# OpenTelemetry setup for Azure Monitor integration
+from opentelemetry import trace
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter
+from azure.monitor.opentelemetry.exporter import AzureMonitorTraceExporter
+logging.basicConfig(level=logging.INFO)
 load_dotenv()
+
+# Initialize OpenTelemetry tracing
+def setup_tracing():
+    """Setup OpenTelemetry tracing with Azure Monitor exporter"""
+    trace_provider = TracerProvider()
+    
+    # Add Azure Monitor exporter if connection string is available
+    connection_string = os.getenv("APPLICATIONINSIGHTS_CONNECTION_STRING")
+    if connection_string:
+        azure_exporter = AzureMonitorTraceExporter.from_connection_string(connection_string)
+        trace_provider.add_span_processor(BatchSpanProcessor(azure_exporter))
+        logging.info("OpenTelemetry tracing configured with Azure Monitor")
+    else:
+        # Fallback to console exporter for local development
+        console_exporter = ConsoleSpanExporter()
+        trace_provider.add_span_processor(BatchSpanProcessor(console_exporter))
+        logging.info("OpenTelemetry tracing configured with console exporter (no Azure Monitor connection string found)")
+    
+    trace.set_tracer_provider(trace_provider)
+
+setup_tracing()
 
 data_cfg = {
   "azure": {
@@ -33,6 +59,7 @@ data_cfg = {
 
 def main() -> None:
     logging.info("Timer triggered — starting pipeline...")
+    print(data_cfg['search']['index_name'],data_cfg['azure']['connection_string'])
 
     pipeline = AzureSearchDataPipeline(data_cfg)
     pipeline.run_update()
