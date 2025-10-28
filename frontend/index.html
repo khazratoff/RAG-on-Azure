@@ -13,7 +13,6 @@
       flex-direction: column;
       height: 100vh;
     }
-
     header {
       background-color: #0078d4;
       color: white;
@@ -23,7 +22,6 @@
       text-align: center;
       box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
     }
-
     #chat {
       flex: 1;
       overflow-y: auto;
@@ -32,7 +30,6 @@
       flex-direction: column;
       gap: 0.5rem;
     }
-
     .message {
       max-width: 75%;
       padding: 0.75rem 1rem;
@@ -43,19 +40,16 @@
       font-size: 0.95rem;
       animation: fadeIn 0.3s ease-in;
     }
-
     @keyframes fadeIn {
       from { opacity: 0; transform: translateY(10px); }
       to { opacity: 1; transform: translateY(0); }
     }
-
     .user {
       background-color: #0078d4;
       color: white;
       align-self: flex-end;
       border-bottom-right-radius: 4px;
     }
-
     .bot {
       background-color: white;
       color: #222;
@@ -63,14 +57,12 @@
       border: 1px solid #ddd;
       border-bottom-left-radius: 4px;
     }
-
     #input-area {
       display: flex;
       padding: 0.75rem;
       background: white;
       border-top: 1px solid #ddd;
     }
-
     #message {
       flex: 1;
       padding: 0.75rem 1rem;
@@ -79,11 +71,9 @@
       font-size: 1rem;
       outline: none;
     }
-
     #message:focus {
       border-color: #0078d4;
     }
-
     button {
       background-color: #0078d4;
       color: white;
@@ -95,40 +85,18 @@
       cursor: pointer;
       transition: 0.2s;
     }
-
     button:hover:not(:disabled) {
       background-color: #005fa3;
     }
-
     button:disabled {
       background-color: #ccc;
       cursor: not-allowed;
     }
-
-    .typing {
-      display: inline-block;
-      font-style: italic;
-      color: #666;
-      font-size: 0.85rem;
-    }
-
-    .typing::after {
-      content: '...';
-      animation: ellipsis 1.5s infinite;
-    }
-
-    @keyframes ellipsis {
-      0% { content: '.'; }
-      33% { content: '..'; }
-      66% { content: '...'; }
-    }
-
     .error {
       background-color: #ffebee;
       color: #c62828;
       border: 1px solid #ef5350;
     }
-
     .cursor {
       display: inline-block;
       width: 2px;
@@ -137,13 +105,13 @@
       animation: blink 1s infinite;
       margin-left: 2px;
     }
-
     @keyframes blink {
       0%, 50% { opacity: 1; }
       51%, 100% { opacity: 0; }
     }
   </style>
 </head>
+
 <body>
   <header>💬 Employee Assistant Bot</header>
 
@@ -163,9 +131,26 @@
     const chatContainer = document.getElementById("chat");
     const userInput = document.getElementById("message");
     const sendButton = document.getElementById("send-button");
-    
-    // Update this to match your backend URL
+
+    // ✅ Change this for production
     const BACKEND_URL = "https://az-rag-app.blackbeach-8f41fba5.eastus.azurecontainerapps.io";
+    // const BACKEND_URL = "http://localhost:8000"; // for local testing
+
+    // 🔹 Maintain consistent session across refreshes
+    function generateUUID() {
+      return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+        const r = (Math.random() * 16) | 0;
+        const v = c === 'x' ? r : (r & 0x3) | 0x8;
+        return v.toString(16);
+      });
+    }
+
+    let session_id = localStorage.getItem("session_id");
+    if (!session_id) {
+      session_id = generateUUID();
+      localStorage.setItem("session_id", session_id);
+    }
+
 
     function appendMessage(sender, text) {
       const messageDiv = document.createElement("div");
@@ -189,14 +174,10 @@
       const question = userInput.value.trim();
       if (!question) return;
 
-      // Display user message
       appendMessage("user", question);
       userInput.value = "";
-      
-      // Disable input while processing
       setInputState(true);
 
-      // Create bot message container with typing indicator
       const botMessage = appendMessage("bot", "");
       const cursor = document.createElement("span");
       cursor.classList.add("cursor");
@@ -204,15 +185,14 @@
 
       let messageText = "";
 
-      // Create EventSource for streaming
-      const eventSource = new EventSource(
-        `${BACKEND_URL}/stream?question=${encodeURIComponent(question)}`
-      );
+      // ✅ Use encodeURIComponent to handle safe URL encoding
+      const url = `${BACKEND_URL}/stream?question=${encodeURIComponent(question)}&session_id=${encodeURIComponent(session_id)}`;
+      const eventSource = new EventSource(url);
 
       eventSource.onmessage = (event) => {
         const data = event.data;
-        
-        // Check if streaming is complete
+
+        // Handle end of stream
         if (data === "[DONE]") {
           eventSource.close();
           cursor.remove();
@@ -221,7 +201,7 @@
           return;
         }
 
-        // Append the chunk to the message
+        // Append stream chunk
         messageText += data;
         botMessage.textContent = messageText;
         botMessage.appendChild(cursor);
@@ -232,24 +212,21 @@
         console.error("EventSource error:", error);
         eventSource.close();
         cursor.remove();
-        
-        // Show error message
-        if (messageText === "") {
+
+        if (!messageText) {
           botMessage.textContent = "Error: Unable to connect to the server. Please try again.";
           botMessage.classList.add("error");
         }
-        
+
         setInputState(false);
         userInput.focus();
       };
 
-      // Handle connection opening
       eventSource.onopen = () => {
-        console.log("Connection established");
+        console.log("🔗 SSE connection established");
       };
     }
 
-    // Focus input on load
     window.onload = () => {
       userInput.focus();
     };
