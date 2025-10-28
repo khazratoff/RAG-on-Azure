@@ -54,7 +54,6 @@ class AzureSearchRagPipeline:
 
         self.vector_field = "content_vector"
 
-        self.chat_history = []
 
 
 
@@ -89,75 +88,6 @@ class AzureSearchRagPipeline:
             })
 
         return docs
-
-
-    # def refine_query(self, user_input: str, docs: List[Dict]) -> str:
-    #     """
-    #     Use LLM to reformulate the user’s question for more accurate retrieval.
-    #     """
-    #     context=''
-    #     for d in docs:
-    #         context += f"- {d['content']}\n"
-    #         context+=f"Document name: {d['metadata']}\n"
-    #     # context = " ".join([d["content"],d["metadata"] for d in docs])
-    #     template = """
-    #     You are an intelligent assistant that reformulates user questions for better retrieval.
-    #     Context: {context}
-    #     User Query: {query}
-    #     Reformulated Query:
-    #     """
-    #     prompt = PromptTemplate(template=template, input_variables=["context", "query"])
-    #     reformulated = self.llm.invoke(prompt.format(context=context, query=user_input))
-    #     return reformulated.content.strip()
-
-
-    # def generate_answer(self, refined_query: str, retrieved_docs: List[Dict]):
-    #     """
-    #     Generate a final answer using the LLM and retrieved context.
-    #     """
-        
-    #     context=''
-    #     for d in retrieved_docs:
-    #         context += f"- {d['content']}\n"
-    #         context+=f"Document name: {d['metadata']}\n"
-    #     # context = "\n".join([f"- {d['content']}" for d in retrieved_docs])
-    #     template = """
-    #     You are a helpful assistant using Retrieval-Augmented Generation (RAG).
-    #     Use the context to answer the question accurately.
-    #     In addition to context there is a metadata which is basically name of the document. Make sure to include correct document name in your response.
-
-    #     If information is missing, be honest.
-
-    #     Question: {query}
-    #     Context:
-    #     {context}
-
-    #     Final Answer:
-    #     """
-    #     prompt = PromptTemplate(template=template, input_variables=["query", "context"])
-    #     # response = self.llm.invoke(prompt.format(query=refined_query, context=context))
-    #     for token in self.llm.stream(prompt.format(query=refined_query, context=context)):
-    #         yield token.content
-    #     # return response.content.strip()
-
-
-    # def run(self, user_input: str) -> str:
-    #     """
-    #     Execute full RAG flow: retrieve → refine → generate answer.
-    #     """
-    #     # Step 1: Retrieve documents
-    #     docs = self.retrieve(user_input)
-
-    #     # Step 2: Refine query
-    #     refined_query = self.refine_query(user_input, docs)
-
-    #     # Step 3: Generate final answer
-    #     # answer = self.generate_answer(refined_query, docs)
-    #     # return answer
-    #     return self.generate_answer(refined_query, docs)
-    
-
-
 
 #---------------Adding chat history as a context----------
 
@@ -202,28 +132,20 @@ class AzureSearchRagPipeline:
             yield token.content
 
         
-    def run(self, user_input: str):
+    def run(self, user_input: str, chat_history):
         """
-        Execute full RAG flow with conversational history.
+        Executes full RAG flow with conversational history.
         """
-        # Step 0: Incorporate chat history context
-        history_context = "\n".join(
-            [f"{h['role'].capitalize()}: {h['content']}" for h in self.chat_history[-5:]]
-        )  # only last 5 turns for efficiency
 
-        # Step 1: Retrieve
+        history_context = "\n".join(
+            [f"{h['role'].capitalize()}: {h['content']}" for h in chat_history[-5:]]
+        )  
+
         docs = self.retrieve(user_input)
 
-        # Step 2: Refine query with history
         refined_query = self.refine_query_with_history(user_input, history_context, docs)
 
-        # Step 3: Generate and stream answer
         stream = self.generate_answer_with_history(refined_query, docs, history_context)
-
-        # Step 4: Update chat memory after streaming
-        full_response = ""
         for chunk in stream:
-            full_response += chunk
-            yield chunk  # stream out partial tokens
-        self.chat_history.append({"role": "user", "content": user_input})
-        self.chat_history.append({"role": "assistant", "content": full_response})
+            yield chunk  
+

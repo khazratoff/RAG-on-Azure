@@ -1,10 +1,11 @@
 import asyncio
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from sse_starlette.sse import EventSourceResponse
 from pydantic import BaseModel
 import os
 from dotenv import load_dotenv
+from redis_utils import load_chat_history, save_chat_history
 
 
 load_dotenv()
@@ -12,16 +13,6 @@ load_dotenv()
 from AzureRagPipeline import AzureSearchRagPipeline
 
 app = FastAPI()
-
-
-
-# API_KEY = os.getenv("FASTAPI_KEY")
-# API_KEY_NAME = "PASS-KEY"
-
-# def verify_api_key(request: Request):
-#     api_key = request.headers.get(API_KEY_NAME)
-#     if api_key != API_KEY:
-#         raise HTTPException(status_code=401, detail="Invalid or missing API Key")
 
 class QueryRequest(BaseModel):
     query: str
@@ -54,19 +45,16 @@ rag_cfg = {
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[rag_cfg["fastapi"]["allowed_origin"]], 
-    # allow_origins=["*"], for local testing
+    # allow_origins=[rag_cfg["fastapi"]["allowed_origin"]], 
+    allow_origins=["*"], # for local development 
     allow_credentials=True,
     allow_methods=["*"],  
     allow_headers=["*"],  
 )
 
+
 rag = AzureSearchRagPipeline(cfg=rag_cfg)
 
-# @app.post("/chat")
-# def chat_endpoint(request_body: QueryRequest, _: None = Depends(verify_api_key)):
-#     response = rag.run(request_body.query)
-#     return {"response": response}
 
 @app.get("/")
 def root():
@@ -75,13 +63,27 @@ def root():
 
 
 @app.get("/stream")
-async def stream(question: str):
+async def stream(question: str, session_id: str):
+
+    if not session_id:
+        raise HTTPException(status_code=400, detail="session_id is required")
+    
+    history = load_chat_history(session_id)
+
+    history.append({"role": "user", "content": question})
+
     async def event_generator():
+        partial_response = ""
         try:
-            for chunk in rag.run(question):
+            for chunk in rag.run(question, chat_history=history):
+                partial_response += chunk
                 yield chunk
-                await asyncio.sleep(0.1)  
+                await asyncio.sleep(0.1)
+
+            history.append({"role": "assistant", "content": partial_response})
+            save_chat_history(session_id, history)
+
         except Exception as e:
             yield f"data: Error: {str(e)}\n\n"
-    
+
     return EventSourceResponse(event_generator())

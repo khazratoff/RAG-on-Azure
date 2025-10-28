@@ -11,3 +11,8 @@ azure-storage-blob==12.26.0
 azure-search-documents==11.5.3
 python-dotenv
 sse-starlette
+opentelemetry-api==1.23.0
+opentelemetry-sdk==1.23.0
+opentelemetry-instrumentation==0.45b0
+azure-monitor-opentelemetry-exporter
+redis==7.1.0
