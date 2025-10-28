@@ -45,8 +45,8 @@ rag_cfg = {
 
 app.add_middleware(
     CORSMiddleware,
-    # allow_origins=[rag_cfg["fastapi"]["allowed_origin"]], 
-    allow_origins=["*"], # for local development 
+    allow_origins=[rag_cfg["fastapi"]["allowed_origin"]], 
+    # allow_origins=["*"], # for local development 
     allow_credentials=True,
     allow_methods=["*"],  
     allow_headers=["*"],  
