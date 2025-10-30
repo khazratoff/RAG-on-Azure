@@ -125,6 +125,7 @@
       onkeydown="if(event.key === 'Enter') sendMessage()"
     />
     <button id="send-button" onclick="sendMessage()">Send</button>
+    <button id="new-chat" onclick="resetSession()">New Chat</button>
   </div>
 
   <script>
@@ -168,6 +169,16 @@
     function setInputState(disabled) {
       userInput.disabled = disabled;
       sendButton.disabled = disabled;
+    }
+    function resetSession() {
+      localStorage.removeItem("session_id");
+      session_id = generateUUID();
+      localStorage.setItem("session_id", session_id);
+      console.log("🔄 New session started:", session_id);
+
+      // Optional: clear chat window
+      chatContainer.innerHTML = "";
+      appendMessage("bot", "✨ New chat session started.");
     }
 
     function sendMessage() {
