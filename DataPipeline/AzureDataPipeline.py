@@ -106,8 +106,7 @@ class AzureSearchDataPipeline:
 
     def compute_hash(self, data: bytes) -> str:
         """Compute SHA256 hash of data with tracing"""
-        with self.tracer.start_as_current_span("compute_hash"):
-            return hashlib.sha256(data).hexdigest()
+        return hashlib.sha256(data).hexdigest()
 
     def load_hashes(self) -> set:
         """Load set of processed file-hashes from vector container's hashes.json. Return empty set if not present."""
